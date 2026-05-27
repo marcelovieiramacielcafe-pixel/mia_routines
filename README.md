@@ -61,18 +61,66 @@ sqlite3 data/second_brain.db "SELECT * FROM run_log ORDER BY id DESC LIMIT 5;"
    environment — never commit them.
 4. Pick a cadence (every 30 min is reasonable for a mail indexer).
 
+## Washu — Telegram bot (`washu_bot.py`)
+
+A separate, **long-running** process that exposes the Second Brain through
+a Telegram bot (`@EngenheiraWashu_bot`). You DM the bot, Washu replies
+using Claude (default `claude-opus-4-7`, adaptive thinking) and can query
+the SQLite store via tool use.
+
+Not for Claude Routines — this needs a process that stays up (VPS, fly.io,
+Railway, systemd).
+
+### Setup
+
+```bash
+pip install -r requirements.txt   # pulls in anthropic + python-telegram-bot
+```
+
+Add to `.env`:
+
+```
+TELEGRAM_BOT_TOKEN=...                       # from @BotFather
+TELEGRAM_AUTHORIZED_USER_IDS=123456789       # your id from @userinfobot
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+> ⚠️ Leaving `TELEGRAM_AUTHORIZED_USER_IDS` empty lets anyone who finds
+> the bot talk to it (and burn your API quota). Always set it.
+
+Then:
+
+```bash
+python washu_bot.py
+```
+
+### Commands
+
+- `/start` — greeting
+- `/reset` — clear conversation history for your user
+- anything else — Washu responds, consulting the Second Brain when relevant
+
+### Tools available to Washu
+
+- `search_emails` — filter by query / category / sender / time window
+- `get_email_detail` — full body of one email by id
+- `category_summary` — totals per category + last run
+- `recent_runs` — last N `main_routine` invocations
+
 ## Project layout
 
 ```
 mia_routines/
-├── main_routine.py           # entry point
+├── main_routine.py           # cron entry point (Outlook indexer)
+├── washu_bot.py              # long-running Telegram bot entry point
 ├── requirements.txt
 ├── .env.example
 ├── README.md
 └── mia_routines/
     ├── __init__.py
-    ├── config.py             # env loader
+    ├── config.py             # env loader (main_routine)
     ├── classifier.py         # heuristic categorisation
     ├── imap_client.py        # imap-tools wrapper
-    └── second_brain.py       # SQLite store
+    ├── second_brain.py       # SQLite store
+    └── washu.py              # Telegram bot + Claude API client
 ```

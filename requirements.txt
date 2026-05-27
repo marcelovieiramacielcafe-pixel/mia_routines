@@ -1,2 +1,6 @@
 imap-tools==1.10.0
 python-dotenv==1.0.1
+
+# washu_bot.py only — not needed by main_routine.py
+anthropic>=0.92.0
+python-telegram-bot>=21.6,<22
