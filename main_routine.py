@@ -48,7 +48,7 @@ def run() -> int:
 
     started = _utcnow_iso()
     run_id = brain.start_run(started)
-    counts = {"total": 0, "contas_a_pagar": 0, "contabilidade": 0, "other": 0}
+    counts = {"total": 0, "contas_a_pagar": 0, "contabilidade": 0, "other": 0, "errors": 0}
     error: str | None = None
 
     print(f"[mia_routines] run started at {started} — folders={list(config.folders)}")
@@ -63,27 +63,56 @@ def run() -> int:
                 min_uid=min_uid,
                 lookback_days=config.initial_lookback_days,
             ):
-                classification = classify(
-                    sender=fetched.sender,
-                    subject=fetched.subject,
-                    body=fetched.body_text,
-                )
+                # A message the fetcher couldn't parse: record it so the UID
+                # watermark advances and we don't re-fetch it forever.
+                if fetched.parse_error:
+                    brain.record_failure(
+                        folder=fetched.folder,
+                        uid=fetched.uid,
+                        error=fetched.parse_error,
+                    )
+                    counts["errors"] += 1
+                    print(f"  [error] uid={fetched.uid} unparseable: {fetched.parse_error}")
+                    continue
 
-                inserted = brain.insert_email(StoredEmail(
-                    folder=fetched.folder,
-                    uid=fetched.uid,
-                    message_id=fetched.message_id,
-                    date_utc=fetched.date_utc,
-                    sender=fetched.sender,
-                    recipients=fetched.recipients,
-                    subject=fetched.subject,
-                    body_text=fetched.body_text,
-                    body_preview=_preview(fetched.body_text),
-                    attachments=fetched.attachments,
-                    category=classification.category,
-                    classifier_score=classification.score,
-                    classifier_terms=classification.matched_terms,
-                ))
+                # Isolate per-message failures: one bad message (e.g. a route
+                # photo with a broken filename) must not abort the run or block
+                # the watermark, which would loop the same error every run.
+                try:
+                    classification = classify(
+                        sender=fetched.sender,
+                        subject=fetched.subject,
+                        body=fetched.body_text,
+                    )
+
+                    inserted = brain.insert_email(StoredEmail(
+                        folder=fetched.folder,
+                        uid=fetched.uid,
+                        message_id=fetched.message_id,
+                        date_utc=fetched.date_utc,
+                        sender=fetched.sender,
+                        recipients=fetched.recipients,
+                        subject=fetched.subject,
+                        body_text=fetched.body_text,
+                        body_preview=_preview(fetched.body_text),
+                        attachments=fetched.attachments,
+                        category=classification.category,
+                        classifier_score=classification.score,
+                        classifier_terms=classification.matched_terms,
+                    ))
+                except Exception as exc:
+                    brain.record_failure(
+                        folder=fetched.folder,
+                        uid=fetched.uid,
+                        message_id=fetched.message_id,
+                        date_utc=fetched.date_utc,
+                        sender=fetched.sender,
+                        subject=fetched.subject,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                    counts["errors"] += 1
+                    print(f"  [error] uid={fetched.uid} could not be indexed: {type(exc).__name__}: {exc}")
+                    continue
 
                 if not inserted:
                     continue
@@ -103,7 +132,10 @@ def run() -> int:
         traceback.print_exc()
     finally:
         finished = _utcnow_iso()
-        brain.finish_run(run_id, finished, counts, error=error)
+        run_error = error
+        if run_error is None and counts["errors"]:
+            run_error = f"{counts['errors']} message(s) skipped due to processing errors"
+        brain.finish_run(run_id, finished, counts, error=run_error)
 
     totals = brain.category_counts()
     print(
@@ -111,7 +143,8 @@ def run() -> int:
         f"new={counts['total']} "
         f"(contas_a_pagar={counts['contas_a_pagar']}, "
         f"contabilidade={counts['contabilidade']}, "
-        f"other={counts['other']}) | "
+        f"other={counts['other']}, "
+        f"errors={counts['errors']}) | "
         f"db_totals={totals}"
     )
 

@@ -35,6 +35,11 @@ sender domains.
   to IVA/IRS/IES/Modelos, payroll processing, accountant communications.
 - **other** — fallback bucket; still indexed, but ignored by the routine's
   primary mission.
+- **error** — sentinel for a message that couldn't be processed (e.g. a photo
+  attachment with a broken filename encoding). It's recorded so the per-folder
+  UID watermark advances past it; without this the message would be re-fetched
+  and re-fail on every run — an endless error loop. The original failure is
+  kept in `body_preview`/`classifier_terms` for inspection.
 
 Sender matches weigh 3× because they're far more reliable than keyword
 overlap in noisy newsletter content.
