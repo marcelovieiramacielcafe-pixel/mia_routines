@@ -24,6 +24,7 @@ class FetchedEmail:
     subject: str | None
     body_text: str | None
     attachments: list[dict]
+    parse_error: str | None = None
 
 
 def _to_utc_iso(dt: datetime | None) -> str | None:
@@ -66,22 +67,45 @@ class OutlookIMAP:
                     break
                 count += 1
 
-                attachments: list[dict] = []
-                for att in msg.attachments:
-                    attachments.append({
-                        "filename": att.filename,
-                        "content_type": att.content_type,
-                        "size_bytes": att.size,
-                    })
+                try:
+                    uid = int(msg.uid) if msg.uid and msg.uid.isdigit() else 0
+                except Exception:
+                    uid = 0
 
-                yield FetchedEmail(
-                    folder=folder,
-                    uid=int(msg.uid) if msg.uid and msg.uid.isdigit() else 0,
-                    message_id=msg.headers.get("message-id", [None])[0] if msg.headers else None,
-                    date_utc=_to_utc_iso(msg.date),
-                    sender=msg.from_,
-                    recipients=", ".join(msg.to or ()),
-                    subject=msg.subject,
-                    body_text=msg.text or msg.html or "",
-                    attachments=attachments,
-                )
+                # Parsing is lazy in imap-tools: subject/body/attachment access
+                # can raise on malformed MIME. Degrade to an error record (still
+                # carrying the uid) instead of aborting the whole fetch — that
+                # lets the caller advance past a poison message rather than loop.
+                try:
+                    attachments: list[dict] = []
+                    for att in msg.attachments:
+                        attachments.append({
+                            "filename": att.filename,
+                            "content_type": att.content_type,
+                            "size_bytes": att.size,
+                        })
+
+                    yield FetchedEmail(
+                        folder=folder,
+                        uid=uid,
+                        message_id=msg.headers.get("message-id", [None])[0] if msg.headers else None,
+                        date_utc=_to_utc_iso(msg.date),
+                        sender=msg.from_,
+                        recipients=", ".join(msg.to or ()),
+                        subject=msg.subject,
+                        body_text=msg.text or msg.html or "",
+                        attachments=attachments,
+                    )
+                except Exception as exc:
+                    yield FetchedEmail(
+                        folder=folder,
+                        uid=uid,
+                        message_id=None,
+                        date_utc=None,
+                        sender=None,
+                        recipients=None,
+                        subject=None,
+                        body_text=None,
+                        attachments=[],
+                        parse_error=f"{type(exc).__name__}: {exc}",
+                    )

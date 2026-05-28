@@ -53,6 +53,16 @@ CREATE TABLE IF NOT EXISTS run_log (
 """
 
 
+def _sqlite_safe(value):
+    """Replace lone surrogates / un-encodable chars so SQLite's UTF-8 writer
+    never raises. Attachment filenames and bodies copied straight out of raw
+    MIME (e.g. phone-camera route photos) routinely carry these, and an
+    unhandled UnicodeEncodeError on INSERT would abort the whole run."""
+    if not isinstance(value, str):
+        return value
+    return value.encode("utf-8", "replace").decode("utf-8")
+
+
 @dataclass
 class StoredEmail:
     folder: str
@@ -99,6 +109,11 @@ class SecondBrain:
 
     def insert_email(self, email: StoredEmail) -> bool:
         """Returns True if inserted, False if (folder, uid) already exists."""
+        attachments = [
+            {k: _sqlite_safe(v) for k, v in att.items()}
+            for att in email.attachments
+        ]
+        terms = [_sqlite_safe(t) for t in email.classifier_terms]
         with self._connect() as conn:
             try:
                 conn.execute(
@@ -110,17 +125,54 @@ class SecondBrain:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        email.folder, email.uid, email.message_id, email.date_utc,
-                        email.sender, email.recipients, email.subject,
-                        email.body_text, email.body_preview,
-                        json.dumps(email.attachments, ensure_ascii=False),
+                        email.folder, email.uid,
+                        _sqlite_safe(email.message_id), email.date_utc,
+                        _sqlite_safe(email.sender), _sqlite_safe(email.recipients),
+                        _sqlite_safe(email.subject),
+                        _sqlite_safe(email.body_text), _sqlite_safe(email.body_preview),
+                        json.dumps(attachments, ensure_ascii=False),
                         email.category, email.classifier_score,
-                        json.dumps(list(email.classifier_terms), ensure_ascii=False),
+                        json.dumps(terms, ensure_ascii=False),
                     ),
                 )
                 return True
             except sqlite3.IntegrityError:
                 return False
+
+    def record_failure(
+        self,
+        folder: str,
+        uid: int,
+        *,
+        message_id: str | None = None,
+        date_utc: str | None = None,
+        sender: str | None = None,
+        subject: str | None = None,
+        error: str = "",
+    ) -> bool:
+        """Insert a sentinel row (category='error') for a message we couldn't
+        process, so the per-folder UID watermark advances past it.
+
+        Without this, one un-processable message permanently blocks the
+        watermark: it gets re-fetched and re-fails on every scheduled run,
+        which is exactly the error loop this guards against.
+        """
+        safe_error = _sqlite_safe(error)
+        return self.insert_email(StoredEmail(
+            folder=folder,
+            uid=uid,
+            message_id=message_id,
+            date_utc=date_utc,
+            sender=sender,
+            recipients=None,
+            subject=subject,
+            body_text=None,
+            body_preview=safe_error[:400] if safe_error else None,
+            attachments=[],
+            category="error",
+            classifier_score=0,
+            classifier_terms=(safe_error,) if safe_error else (),
+        ))
 
     def start_run(self, started_at_utc: str) -> int:
         with self._connect() as conn:
