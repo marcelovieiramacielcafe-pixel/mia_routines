@@ -29,6 +29,18 @@ curl -sS "$HTTPS_PROXY/__agentproxy/status" | head -20   # só em ambiente remot
 (configuração do environment em <https://code.claude.com/docs/en/claude-code-on-the-web>),
 ou o Agent Reach precisa rodar em outra máquina.
 
+## Onde instalar
+
+Instale **na máquina que executa o agente**, não onde você conversa com ele.
+
+| Execução | YouTube | Instagram |
+|---|---|---|
+| Cowork desktop (PC) | ✅ rede própria, sem proxy | ✅ único lugar com um Chrome logado |
+| Sessão remota / nuvem | ❌ gateway bloqueia | ❌ sem navegador com sessão |
+
+Conversar pelo telemóvel não muda nada: o telefone dirige a sessão, e as ferramentas
+rodam na máquina onde o agente está. Instalar no PC cobre os dois.
+
 ## Instalação
 
 ```bash
