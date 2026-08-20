@@ -61,6 +61,13 @@ sqlite3 data/second_brain.db "SELECT * FROM run_log ORDER BY id DESC LIMIT 5;"
    environment — never commit them.
 4. Pick a cadence (every 30 min is reasonable for a mail indexer).
 
+## Agent Reach
+
+Optional tooling that gives an agent read access to YouTube, Instagram and other
+platforms. Install with `./scripts/setup_agent_reach.sh` — see
+[docs/agent-reach.md](docs/agent-reach.md) for the network prerequisite and the
+security notes on cookie-based channels.
+
 ## Project layout
 
 ```
@@ -69,6 +76,10 @@ mia_routines/
 ├── requirements.txt
 ├── .env.example
 ├── README.md
+├── docs/
+│   └── agent-reach.md        # Agent Reach install + security notes
+├── scripts/
+│   └── setup_agent_reach.sh  # isolated, read-only-by-default installer
 └── mia_routines/
     ├── __init__.py
     ├── config.py             # env loader
