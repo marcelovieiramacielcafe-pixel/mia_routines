@@ -61,6 +61,24 @@ sqlite3 data/second_brain.db "SELECT * FROM run_log ORDER BY id DESC LIMIT 5;"
    environment — never commit them.
 4. Pick a cadence (every 30 min is reasonable for a mail indexer).
 
+## Triagem de WhatsApp
+
+Serviço separado (`main_triage.py`) que recebe notificações do WhatsApp
+reencaminhadas do telemóvel Android, tria-as por regras fixas mais um modelo, e
+avisa pelo Telegram: alerta imediato para o que é urgente, resumo ao fim do dia
+para o resto. Instalação passo a passo em
+[docs/whatsapp-triagem.md](docs/whatsapp-triagem.md).
+
+Só lê e avisa — não existe aqui nenhum cliente de WhatsApp, e nada neste
+repositório consegue escrever para o WhatsApp.
+
+```bash
+python main_triage.py servir   # ingestão, atrás do Caddy
+python main_triage.py resumo   # resumo diário (cron 20:00)
+python main_triage.py pulso    # alarme de silêncio (cron horário)
+python main_triage.py limpar   # apaga texto fora do prazo (cron horário)
+```
+
 ## Agent Reach
 
 Optional tooling that gives an agent read access to YouTube, Instagram and other
